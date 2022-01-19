@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <PropertyPageSchema Include="$(MSBuildThisFileDirectory)shaders.xml" />
+    <AvailableItemName Include="Shaders">
+      <Targets>Shaders</Targets>
+    </AvailableItemName>
+  </ItemGroup>
+
+  <Target
+    Name="ShadersCompil"
+    Condition="'@(Shaders)' != ''"
+    BeforeTargets="ClCompile">
+
+    <Message Importance="High" Text="Building shaders!!!" />
+
+    <!-- Find all shader headers -->
+    <ItemGroup>
+      <ShaderHeader Include="*.glsli" />
+    </ItemGroup>
+    <PropertyGroup>
+      <ShaderHeaders>@(ShaderHeader)</ShaderHeaders>
+    </PropertyGroup>
+
+    <!-- Setup metadata for custom build tool -->
+    <ItemGroup>
+      <Shaders>
+        <Message>Compiling: %(Filename)%(Extension)</Message>
+        <Command>
+			C:/VulkanSDK/1.2.198.1/Bin/glslc.exe -fshader-stage=vertex shaders/%(Filename).glsl -DVERTEX_SHADER=1 -o shaders/%(Filename)_vert.spv
+			C:/VulkanSDK/1.2.198.1/Bin/glslc.exe -fshader-stage=fragment shaders/%(Filename).glsl -DFRAGMENT_SHADER=1 -o shaders/%(Filename)_frag.spv
+		</Command>
+        <AdditionalInputs>$(ShaderHeaders)</AdditionalInputs>
+        <Outputs>shaders/%(Filename)_vert.spv;shaders/%(Filename)_frag.spv</Outputs>
+      </Shaders>
+    </ItemGroup>
+
+    <!-- Compile by forwarding to the Custom Build Tool infrastructure,
+         so it will take care of .tlogs and error/warning parsing -->
+    <CustomBuild
+      Sources="@(Shaders)"
+      MinimalRebuildFromTracking="true"
+      TrackerLogDirectory="$(TLogLocation)"
+      ErrorListRegex="(?'FILENAME'.+):(?'LINE'\d+):(?'COLUMN'\d+): (?'CATEGORY'error|warning): (?'TEXT'.*)" />
+  </Target>
+</Project>
