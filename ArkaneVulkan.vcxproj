@@ -59,6 +59,7 @@
     <UseDebugLibraries>true</UseDebugLibraries>
     <PlatformToolset>v143</PlatformToolset>
     <CharacterSet>Unicode</CharacterSet>
+    <EnableASAN>false</EnableASAN>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'" Label="Configuration">
     <ConfigurationType>Application</ConfigurationType>
@@ -107,9 +108,7 @@
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Final|Win32'">
     <LinkIncremental>false</LinkIncremental>
   </PropertyGroup>
-  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
-    <LinkIncremental>true</LinkIncremental>
-  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'" />
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <LinkIncremental>false</LinkIncremental>
   </PropertyGroup>
@@ -168,7 +167,6 @@
       <ConformanceMode>true</ConformanceMode>
       <AdditionalIncludeDirectories>C:\VulkanSDK\1.2.198.1\Include;F:\C++\ArkaneVulkan\extern\;F:\C++\ArkaneVulkan\extern\glfw\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <LanguageStandard>stdcpp17</LanguageStandard>
-      <FavorSizeOrSpeed>Speed</FavorSizeOrSpeed>
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
     </ClCompile>
     <Link>
@@ -228,6 +226,7 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="ArkaneVulkan.cpp" />
+    <ClCompile Include="C:\VulkanSDK\1.2.198.1\Source\SPIRV-Reflect\spirv_reflect.c" />
     <ClCompile Include="extern\glfw\src\context.c" />
     <ClCompile Include="extern\glfw\src\egl_context.c" />
     <ClCompile Include="extern\glfw\src\init.c" />
@@ -256,12 +255,14 @@
     <ClCompile Include="extern\imgui\imgui_impl_vulkan.cpp" />
     <ClCompile Include="extern\imgui\imgui_tables.cpp" />
     <ClCompile Include="extern\imgui\imgui_widgets.cpp" />
+    <ClCompile Include="IndexBuffer.cpp" />
     <ClCompile Include="Mesh.cpp" />
     <ClCompile Include="Shader.cpp" />
     <ClCompile Include="Texture2D.cpp" />
     <ClCompile Include="VulkanContext.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="C:\VulkanSDK\1.2.198.1\Source\SPIRV-Reflect\spirv_reflect.h" />
     <ClInclude Include="extern\glfw\src\internal.h" />
     <ClInclude Include="extern\glfw\src\mappings.h" />
     <ClInclude Include="extern\glfw\src\null_joystick.h" />
@@ -279,8 +280,10 @@
     <ClInclude Include="extern\imgui\imstb_rectpack.h" />
     <ClInclude Include="extern\imgui\imstb_textedit.h" />
     <ClInclude Include="extern\imgui\imstb_truetype.h" />
+    <ClInclude Include="extern\SPIRV-Reflect\spirv_reflect.h" />
     <ClInclude Include="extern\stb\stb_image.h" />
     <ClInclude Include="extern\stb\stb_image_write.h" />
+    <ClInclude Include="IndexBuffer.h" />
     <ClInclude Include="Mesh.h" />
     <ClInclude Include="Shader.h" />
     <ClInclude Include="Texture2D.h" />

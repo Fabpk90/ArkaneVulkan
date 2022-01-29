@@ -1,6 +1,7 @@
 #include "VulkanContext.h"
 
 #define GLM_FORCE_RADIANS
+#define GLM_FORCE_DEPTH_ZERO_TO_ONE
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 
@@ -39,20 +40,22 @@ void VulkanContext::InitVulkan()
     CreateInstance();
     CreatePhysicalDevice();
     CreateLogicalDevice();
+
     CreateMemPool();
+    CreateCommandPool();
+
+    LoadEntities();
+
     CreateSwapChain();
     CreateSwapChainViews();
+    CreateDepthResources();
     CreateRenderPass();
     CreateDescriptorSetLayout();
     CreateGraphicsPipeline();
     CreateFramebuffers();
-    CreateCommandPool();
 
     CreateImGuiResources();
 
-    LoadEntities();
-    CreateVertexBuffer();
-    CreateIndexBuffer();
     CreateUniformBuffers();
     CreateDescriptorPool();
     CreateDescriptorSets();
@@ -172,12 +175,6 @@ void VulkanContext::Destroy()
     delete mesh;
 
     logicalDevice.destroyDescriptorSetLayout(descriptorSetLayout);
-
-    logicalDevice.destroyBuffer(vertexBuffer);
-    logicalDevice.freeMemory(vertexDeviceMemory);
-
-    logicalDevice.destroyBuffer(indexBuffer);
-    logicalDevice.freeMemory(indexBufferDeviceMemory);
 
     for (int i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i)
     {
@@ -488,6 +485,23 @@ void VulkanContext::CreateSwapChainViews()
     }
 }
 
+void VulkanContext::CreateDepthResources()
+{
+    swapchainDepthImages.resize(swapchainImages.size());
+    swapchainDepthImagesMemory.resize(swapchainImages.size());
+    swapchainDepthImagesViews.resize(swapchainImages.size());
+
+    for (int i = 0; i < swapchainDepthImages.size(); ++i)
+    {
+        CreateImage(actualSwapChainExtent.width, actualSwapChainExtent.height, vk::Format::eD32Sfloat, vk::ImageTiling::eOptimal, vk::ImageUsageFlagBits::eDepthStencilAttachment
+            , vk::MemoryPropertyFlagBits::eDeviceLocal, swapchainDepthImages[i], swapchainDepthImagesMemory[i]);
+
+        swapchainDepthImagesViews[i] = CreateImageView(swapchainDepthImages[i], vk::Format::eD32Sfloat, vk::ImageAspectFlagBits::eDepth);
+    }
+
+    
+}
+
 void VulkanContext::CreateRenderPass()
 {
     vk::AttachmentDescription colorAttachment;
@@ -504,6 +518,23 @@ void VulkanContext::CreateRenderPass()
     colorAttachment.initialLayout = vk::ImageLayout::eUndefined;
     colorAttachment.finalLayout = vk::ImageLayout::ePresentSrcKHR; // todo: change this when you want to use ImGui
 
+    vk::AttachmentDescription depthAttachment;
+    depthAttachment.format = vk::Format::eD32Sfloat;
+    depthAttachment.samples = vk::SampleCountFlagBits::e1;
+
+    depthAttachment.loadOp = vk::AttachmentLoadOp::eClear;
+    depthAttachment.storeOp = vk::AttachmentStoreOp::eDontCare;
+
+    depthAttachment.stencilLoadOp = vk::AttachmentLoadOp::eDontCare;
+    depthAttachment.stencilStoreOp = vk::AttachmentStoreOp::eDontCare;
+
+    depthAttachment.initialLayout = vk::ImageLayout::eUndefined;
+    depthAttachment.finalLayout = vk::ImageLayout::eDepthStencilAttachmentOptimal;
+
+    vk::AttachmentReference depthAttachmentRef;
+    depthAttachmentRef.attachment = 1;
+    depthAttachmentRef.layout = vk::ImageLayout::eDepthStencilAttachmentOptimal;
+
     vk::AttachmentReference colorAttachmentRef;
     colorAttachmentRef.attachment = 0; // refers to attachment Description
     colorAttachmentRef.layout = vk::ImageLayout::eColorAttachmentOptimal;
@@ -513,9 +544,13 @@ void VulkanContext::CreateRenderPass()
     subpass.colorAttachmentCount = 1;
     subpass.pColorAttachments = &colorAttachmentRef; //this is used in the shader (layout location = 0)
 
+	subpass.pDepthStencilAttachment = &depthAttachmentRef;
+
+    const std::array attachments = { colorAttachment, depthAttachment };
+
     vk::RenderPassCreateInfo info;
-    info.attachmentCount = 1;
-    info.pAttachments = &colorAttachment;
+    info.attachmentCount = attachments.size();
+    info.pAttachments = attachments.data();
 
     info.subpassCount = 1;
     info.pSubpasses = &subpass;
@@ -524,11 +559,11 @@ void VulkanContext::CreateRenderPass()
     dependency.dstSubpass = 0;
     dependency.srcSubpass = VK_SUBPASS_EXTERNAL;
 
-    dependency.srcStageMask = vk::PipelineStageFlagBits::eColorAttachmentOutput;
+    dependency.srcStageMask = vk::PipelineStageFlagBits::eColorAttachmentOutput | vk::PipelineStageFlagBits::eEarlyFragmentTests;
     dependency.srcAccessMask = vk::AccessFlagBits::eNoneKHR;
 
-    dependency.dstStageMask = vk::PipelineStageFlagBits::eColorAttachmentOutput;
-    dependency.dstAccessMask = vk::AccessFlagBits::eColorAttachmentWrite;
+    dependency.dstStageMask = vk::PipelineStageFlagBits::eColorAttachmentOutput | vk::PipelineStageFlagBits::eEarlyFragmentTests;
+    dependency.dstAccessMask = vk::AccessFlagBits::eColorAttachmentWrite | vk::AccessFlagBits::eDepthStencilAttachmentWrite;
 
     info.dependencyCount = 1;
     info.pDependencies = &dependency;
@@ -563,7 +598,8 @@ void VulkanContext::CreateDescriptorSetLayout()
 
 void VulkanContext::CreateGraphicsPipeline()
 {
-    shaderTriangle = new Shader(logicalDevice, "shaders/Triangle");
+    shaderTriangle = new Shader(logicalDevice, "shaders/Mesh");
+    shaderTriangle->Reflect();
     vk::PipelineShaderStageCreateInfo infoVert;
 
     infoVert.module = shaderTriangle->shaderModuleVert;
@@ -580,13 +616,12 @@ void VulkanContext::CreateGraphicsPipeline()
     vk::PipelineShaderStageCreateInfo shaderStages[] = { infoVert, infoFrag };
 
     vk::PipelineVertexInputStateCreateInfo vertexInfo;
-    //todo: insert here the real data, for now no need as it is hardcoded in the shader
 
-    auto vertexAttribs = triangleVertices.GetAttributesDescription();
+    auto vertexAttribs = mesh->GetSubMeshes()[0]->vertices.GetAttributesDescription();
     vertexInfo.pVertexAttributeDescriptions = vertexAttribs.data();
     vertexInfo.vertexAttributeDescriptionCount = static_cast<u32>(vertexAttribs.size());
 
-    auto vertexBinding = triangleVertices.GetBindingDescription();
+    auto vertexBinding = mesh->GetSubMeshes()[0]->vertices.GetBindingDescription();
     vertexInfo.pVertexBindingDescriptions = &vertexBinding;
     vertexInfo.vertexBindingDescriptionCount = 1;
 
@@ -616,7 +651,7 @@ void VulkanContext::CreateGraphicsPipeline()
     rasterizerInfo.lineWidth = 1.0f;
 
     rasterizerInfo.cullMode = vk::CullModeFlagBits::eNone;
-    rasterizerInfo.frontFace = vk::FrontFace::eClockwise;
+    rasterizerInfo.frontFace = vk::FrontFace::eCounterClockwise;
 
     rasterizerInfo.depthBiasEnable = VK_FALSE;
 
@@ -638,6 +673,15 @@ void VulkanContext::CreateGraphicsPipeline()
     blendInfo.logicOp = vk::LogicOp::eCopy;
     blendInfo.pAttachments = &colorBlendAttachment;
 
+    vk::PipelineDepthStencilStateCreateInfo depthStencilInfo;
+    depthStencilInfo.depthTestEnable = VK_TRUE;
+    depthStencilInfo.depthWriteEnable = VK_TRUE;
+    depthStencilInfo.depthCompareOp = vk::CompareOp::eLess;
+    depthStencilInfo.depthBoundsTestEnable = VK_FALSE;
+    depthStencilInfo.setStencilTestEnable(false);
+
+    //todo: add stencil also here: make sure the image has stencil as well !
+
     vk::PipelineLayoutCreateInfo layoutInfo;
     layoutInfo.pSetLayouts = &descriptorSetLayout;
     layoutInfo.setLayoutCount = 1;
@@ -654,7 +698,7 @@ void VulkanContext::CreateGraphicsPipeline()
     info.pViewportState = &viewportState;
     info.pRasterizationState = &rasterizerInfo;
     info.pMultisampleState = &msaaInfo;
-    info.pDepthStencilState = nullptr; //todo: add this
+    info.pDepthStencilState = &depthStencilInfo; 
     info.pColorBlendState = &blendInfo;
     info.pDynamicState = nullptr;
 
@@ -675,16 +719,17 @@ void VulkanContext::CreateFramebuffers()
 
     for (u32 i = 0; i < swapChainViews.size(); ++i)
     {
-        vk::ImageView view = swapChainViews[i];
+        const std::array views = { swapChainViews[i], swapchainDepthImagesViews[i] };
 
         vk::FramebufferCreateInfo info;
 
-        info.attachmentCount = 1;
         info.renderPass = renderPass;
-        info.pAttachments = &view;
+        info.attachmentCount = views.size();
+        info.pAttachments = views.data();
         info.layers = 1;
         info.height = actualSwapChainExtent.height;
         info.width = actualSwapChainExtent.width;
+
 
         framebuffers[i] = logicalDevice.createFramebuffer(info);
     }
@@ -709,37 +754,45 @@ void VulkanContext::LoadEntities()
     mesh = new Mesh("models/nanosuit/nanosuit.obj");
 }
 
-void VulkanContext::CreateVertexBuffer()
+std::pair<vk::Buffer, vk::DeviceMemory> VulkanContext::CreateVertexBuffer(VerticesDeclarations& decl)
 {
-    vk::DeviceSize size = sizeof(VerticesDeclarations) * triangleVertices.GetByteSize();
+    const vk::DeviceSize size = decl.GetElementCount() * decl.GetByteSize();
 
-	vk::Buffer stagingBuffer;
+    vk::Buffer stagingBuffer;
     vk::DeviceMemory stagingBufferMemory;
 
     CreateBuffer(size, vk::BufferUsageFlagBits::eTransferSrc
         , vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent, stagingBuffer, stagingBufferMemory);
 
-    VerticesDeclarations* mappedMem = static_cast<VerticesDeclarations*>(logicalDevice.mapMemory(stagingBufferMemory, 0, size));
+    const auto mappedMem = static_cast<VerticesDeclarations*>(logicalDevice.mapMemory(stagingBufferMemory, 0, size));
 
-    memcpy(mappedMem, triangleVertices.GetData(), size);
+    memcpy(mappedMem, decl.GetData(), size);
 
     logicalDevice.unmapMemory(stagingBufferMemory);
 
-    CreateBuffer(size, vk::BufferUsageFlagBits::eTransferDst | vk::BufferUsageFlagBits::eVertexBuffer
-        , vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent, vertexBuffer, vertexDeviceMemory);
+    vk::Buffer buffer;
+    vk::DeviceMemory memory;
 
-    CopyBuffer(stagingBuffer, vertexBuffer, size);
+    CreateBuffer(size, vk::BufferUsageFlagBits::eTransferDst | vk::BufferUsageFlagBits::eVertexBuffer
+        , vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent, buffer, memory);
+
+    CopyBuffer(stagingBuffer, buffer, size);
 
     logicalDevice.destroyBuffer(stagingBuffer);
     logicalDevice.freeMemory(stagingBufferMemory);
+
+    return { buffer, memory };
 }
 
-void VulkanContext::CreateIndexBuffer()
+std::pair<vk::Buffer, vk::DeviceMemory> VulkanContext::CreateIndexBuffer(const std::vector<u16>& indices)
 {
 	const vk::DeviceSize size = sizeof(u16) * indices.size();
 
     vk::Buffer stagingBuffer;
     vk::DeviceMemory stagingBufferMemory;
+
+    vk::Buffer indexBuffer;
+    vk::DeviceMemory indexBufferMemory;
 
     CreateBuffer(size, vk::BufferUsageFlagBits::eTransferSrc
         , vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent, stagingBuffer, stagingBufferMemory);
@@ -751,20 +804,22 @@ void VulkanContext::CreateIndexBuffer()
     logicalDevice.unmapMemory(stagingBufferMemory);
 
     CreateBuffer(size, vk::BufferUsageFlagBits::eTransferDst | vk::BufferUsageFlagBits::eIndexBuffer
-        , vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent, indexBuffer, indexBufferDeviceMemory);
+        , vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent, indexBuffer, indexBufferMemory);
 
     CopyBuffer(stagingBuffer, indexBuffer, size);
 
     logicalDevice.destroyBuffer(stagingBuffer);
     logicalDevice.freeMemory(stagingBufferMemory);
+
+    return { indexBuffer, indexBufferMemory };
 }
 
 void VulkanContext::CreateUniformBuffers()
 {
-	uboBuffers.resize(swapchainImages.size());
-    uboBuffersMemory.resize(swapchainImages.size());
+	uboBuffers.resize(swapchainImages.size() * mesh->GetSubMeshes().size());
+    uboBuffersMemory.resize(swapchainImages.size() * mesh->GetSubMeshes().size());
 
-    for (u32 i = 0; i < swapchainImages.size(); ++i)
+    for (u32 i = 0; i < uboBuffers.size(); ++i)
     {
 	    constexpr vk::DeviceSize size = sizeof(UBO);
 	    CreateBuffer(size, vk::BufferUsageFlagBits::eUniformBuffer, vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent,
@@ -776,7 +831,7 @@ void VulkanContext::CreateDescriptorPool()
 {
     vk::DescriptorPoolSize poolSizeUbo;
     poolSizeUbo.type = vk::DescriptorType::eUniformBuffer;
-    poolSizeUbo.descriptorCount = swapchainImages.size();
+    poolSizeUbo.descriptorCount = swapchainImages.size() * mesh->GetSubMeshes().size();
 
     vk::DescriptorPoolSize poolSizeSampler;
     poolSizeSampler.type = vk::DescriptorType::eCombinedImageSampler;
@@ -794,50 +849,55 @@ void VulkanContext::CreateDescriptorPool()
 
 void VulkanContext::CreateDescriptorSets()
 {
-    const std::vector<vk::DescriptorSetLayout> layouts(swapchainImages.size(), descriptorSetLayout);
+    const std::vector<vk::DescriptorSetLayout> layouts(swapchainImages.size() * mesh->GetSubMeshes().size(), descriptorSetLayout);
     vk::DescriptorSetAllocateInfo info;
     info.pSetLayouts = layouts.data();
     info.descriptorPool = descriptorPool;
-    info.descriptorSetCount = swapchainImages.size();
+    info.descriptorSetCount = swapchainImages.size() * mesh->GetSubMeshes().size();
 
     descriptorSets = logicalDevice.allocateDescriptorSets(info);
 
     for (u32 i = 0; i < swapchainImages.size(); ++i)
     {
-        vk::DescriptorBufferInfo bufferInfo;
-        bufferInfo.offset = 0;
-        bufferInfo.buffer = uboBuffers[i];
-        bufferInfo.range = VK_WHOLE_SIZE; // or sizeof(UBO)
+	    for (u32 j = 0; j < mesh->GetSubMeshes().size(); ++j)
+	    {
+            const auto index = i * mesh->GetSubMeshes().size() + j;
+            vk::DescriptorBufferInfo bufferInfo;
+            bufferInfo.offset = 0;
+            bufferInfo.buffer = uboBuffers[index];
+            bufferInfo.range = VK_WHOLE_SIZE; // or sizeof(UBO)
 
-        vk::DescriptorImageInfo imageInfo;
-        imageInfo.imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal;
-        //todo: refactor this
-        imageInfo.imageView = mesh->GetSubMeshes()[0]->textures[0].GetView();
-        imageInfo.sampler = mesh->GetSubMeshes()[0]->textures[0].GetSampler();
+            vk::DescriptorImageInfo imageInfo;
+            imageInfo.imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal;
+            //todo: refactor this
+            imageInfo.imageView = mesh->GetSubMeshes()[j]->textures[0].GetView();
+            imageInfo.sampler = mesh->GetSubMeshes()[j]->textures[0].GetSampler();
 
-        vk::WriteDescriptorSet writeBuffer;
-        writeBuffer.dstSet = descriptorSets[i];
-        writeBuffer.dstBinding = 0;
-        writeBuffer.dstArrayElement = 0;
+            vk::WriteDescriptorSet writeBuffer;
+            writeBuffer.dstSet = descriptorSets[index];
+            writeBuffer.dstBinding = 0;
+            writeBuffer.dstArrayElement = 0;
 
-        writeBuffer.descriptorType = vk::DescriptorType::eUniformBuffer;
-        writeBuffer.descriptorCount = 1;
+            writeBuffer.descriptorType = vk::DescriptorType::eUniformBuffer;
+            writeBuffer.descriptorCount = 1;
 
-        writeBuffer.pBufferInfo = &bufferInfo;
+            writeBuffer.pBufferInfo = &bufferInfo;
 
-        vk::WriteDescriptorSet writeImage;
-        writeImage.dstSet = descriptorSets[i];
-        writeImage.dstBinding = 1;
-        writeImage.dstArrayElement = 0;
+            vk::WriteDescriptorSet writeImage;
+            writeImage.dstSet = descriptorSets[index];
+            writeImage.dstBinding = 1;
+            writeImage.dstArrayElement = 0;
 
-        writeImage.descriptorType = vk::DescriptorType::eCombinedImageSampler;
-        writeImage.descriptorCount = 1;
+            writeImage.descriptorType = vk::DescriptorType::eCombinedImageSampler;
+            writeImage.descriptorCount = 1;
 
-        writeImage.pImageInfo = &imageInfo;
+            writeImage.pImageInfo = &imageInfo;
 
-        std::array writes = { writeImage, writeBuffer };
+            std::array writes = { writeImage, writeBuffer };
 
-        logicalDevice.updateDescriptorSets(writes.size(), writes.data(), 0, nullptr);
+            logicalDevice.updateDescriptorSets(writes.size(), writes.data(), 0, nullptr);
+	    }
+        
     }
 }
 
@@ -858,6 +918,10 @@ void VulkanContext::CreateCommandBuffers()
 
     commandBuffersTransfer = logicalDevice.allocateCommandBuffers(info);
 
+    std::array<vk::ClearValue, 2> clearValues;
+    clearValues[0].color.setFloat32({ 0.0f, 0.0f, 0.0f, 1.0f }); //color
+    clearValues[1].depthStencil.depth = 1.0f; // 1.0 here because vulkan goes [0;1] 1 == far
+
     for (u32 i = 0; i < commandBuffersGraphics.size(); ++i)
     {
         vk::CommandBufferBeginInfo infoBuffer;
@@ -872,24 +936,26 @@ void VulkanContext::CreateCommandBuffers()
         renderPassBeginInfo.renderArea.extent = actualSwapChainExtent;
         //renderPassBeginInfo.renderArea.offset
 
-        vk::ClearValue clearValue;
-        clearValue.color.setFloat32({ 0.0f, 0.0f, 0.0f, 1.0f });
-
-        renderPassBeginInfo.clearValueCount = 1;
-        renderPassBeginInfo.pClearValues = &clearValue;
+        renderPassBeginInfo.clearValueCount = clearValues.size();
+        renderPassBeginInfo.pClearValues = clearValues.data();
 
         commandBuffersGraphics[i].beginRenderPass(renderPassBeginInfo, vk::SubpassContents::eInline);
         commandBuffersGraphics[i].bindPipeline(vk::PipelineBindPoint::eGraphics, pipeline);
 
-        const vk::Buffer vertexBuffers[] = { vertexBuffer };
-        constexpr vk::DeviceSize offsets[] = { 0 };
+        for (int j = 0; j < mesh->GetSubMeshes().size(); ++j)
+        {
+            const vk::Buffer vertexBuffers[] = { mesh->GetSubMeshes()[j]->vertices.GetBuffer()};
+            constexpr vk::DeviceSize offsets[] = { 0 };
 
-        commandBuffersGraphics[i].bindVertexBuffers(0, 1, vertexBuffers, offsets);
-        commandBuffersGraphics[i].bindIndexBuffer(indexBuffer, 0, vk::IndexType::eUint16);
-        commandBuffersGraphics[i].bindDescriptorSets(vk::PipelineBindPoint::eGraphics, pipelineLayout, 0, 1
-            , &descriptorSets[i], 0, nullptr);
+            commandBuffersGraphics[i].bindVertexBuffers(0, 1, vertexBuffers, offsets);
+            commandBuffersGraphics[i].bindIndexBuffer(mesh->GetSubMeshes()[j]->indices.GetBuffer(), 0, vk::IndexType::eUint16);
+            commandBuffersGraphics[i].bindDescriptorSets(vk::PipelineBindPoint::eGraphics, pipelineLayout, 0, 1
+                , &descriptorSets[i * mesh->GetSubMeshes().size() + j], 0, nullptr);
 
-        commandBuffersGraphics[i].drawIndexed(static_cast<u32>(indices.size()), 1, 0, 0, 0);
+            commandBuffersGraphics[i].drawIndexed(mesh->GetSubMeshes()[j]->indices.GetSize(), 1, 0, 0, 0);
+        }
+
+        
 
         //ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), commandBuffersGraphics[i]);
 
@@ -925,25 +991,44 @@ void VulkanContext::UpdateUniformBuffer(const vk::ResultValue<unsigned>& imageIn
     const float time = std::chrono::duration<float, std::chrono::seconds::period>(currentTime - startTime).count();
 
     UBO ubo;
-    ubo.model = glm::rotate(glm::mat4(1.0), glm::radians(90.0f), glm::vec3(1, 0, 0));
-    ubo.view = glm::lookAt(glm::vec3(2.0, 2.0, 2.0), glm::vec3(0), glm::vec3(0, 1, 0));
-    ubo.proj = glm::perspective(glm::radians(45.0f),
+    ubo.model = mat4(1.0f);//glm::rotate(glm::mat4(1.0), glm::radians(90.0f), glm::vec3(1, 0, 0));
+    ubo.view = glm::lookAt(glm::vec3(15.0, 30.0, 15.0), glm::vec3(0), glm::vec3(0, 1, 0));
+    ubo.proj = glm::perspective(glm::radians(65.0f),
                                 static_cast<float>(actualSwapChainExtent.width) / static_cast<float>(actualSwapChainExtent.height), 0.1f,
                                 100.0f);
 
     //flipped y for vulkan
     ubo.proj[1][1] *= -1;
 
-    auto* data = logicalDevice.mapMemory(uboBuffersMemory[imageIndex.value], 0, sizeof(UBO));
+    //todo: add update for all descriptors (one for each submesh), probably use some push constants/ push once and update once
 
-    memcpy(data, &ubo, sizeof(UBO));
+    for (u32 i = 0; i < mesh->GetSubMeshes().size(); ++i)
+    {
+        auto* data = logicalDevice.mapMemory(uboBuffersMemory[imageIndex.value * mesh->GetSubMeshes().size() + i], 0, sizeof(UBO));
 
-    logicalDevice.unmapMemory(uboBuffersMemory[imageIndex.value]);
+        memcpy(data, &ubo, sizeof(UBO));
+
+        logicalDevice.unmapMemory(uboBuffersMemory[imageIndex.value * mesh->GetSubMeshes().size() + i]);
+    }
+}
+
+void VulkanContext::DestroyDepthResources()
+{
+	for (int i = 0; i < swapchainDepthImages.size(); ++i)
+	{
+		logicalDevice.destroyImageView(swapchainDepthImagesViews[i]);
+        logicalDevice.freeMemory(swapchainDepthImagesMemory[i]);
+        logicalDevice.destroyImage(swapchainDepthImages[i]);
+	}
+
+    swapchainDepthImages.clear();
+    swapchainDepthImagesMemory.clear();
+    swapchainDepthImagesViews.clear();
 }
 
 void VulkanContext::CleanUpSwapChain()
 {
-	for (u32 i = 0; i < swapchainImages.size(); ++i)
+	for (u32 i = 0; i < uboBuffers.size(); ++i)
 	{
         logicalDevice.destroyBuffer(uboBuffers[i]);
         logicalDevice.freeMemory(uboBuffersMemory[i]);
@@ -966,6 +1051,7 @@ void VulkanContext::CleanUpSwapChain()
 
     DestroySwapChainImageViews();
     DestroySwapChain();
+    DestroyDepthResources();
 }
 
 void VulkanContext::RecreateSwapChain()
@@ -987,6 +1073,7 @@ void VulkanContext::RecreateSwapChain()
 
     CreateSwapChain();
     CreateSwapChainViews();
+    CreateDepthResources();
     CreateRenderPass();
     CreateGraphicsPipeline();
     CreateFramebuffers();
@@ -1107,13 +1194,13 @@ void VulkanContext::CreateImage(u32 _width, u32 _height, vk::Format _format, vk:
     logicalDevice.bindImageMemory(_image, _memory, 0);
 }
 
-vk::ImageView VulkanContext::CreateImageView(const vk::Image& image, vk::Format format) const
+vk::ImageView VulkanContext::CreateImageView(const vk::Image& image, vk::Format format, vk::ImageAspectFlagBits aspectFlag) const
 {
     vk::ImageViewCreateInfo info;
     info.format = format;
     info.image = image;
     info.viewType = vk::ImageViewType::e2D;
-    info.subresourceRange.aspectMask = vk::ImageAspectFlagBits::eColor;
+    info.subresourceRange.aspectMask = aspectFlag;
     info.subresourceRange.baseArrayLayer = 0;
     info.subresourceRange.baseMipLevel = 0;
     info.subresourceRange.layerCount = 1;

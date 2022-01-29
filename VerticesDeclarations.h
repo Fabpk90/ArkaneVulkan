@@ -2,6 +2,7 @@
 
 #include <glm/glm.hpp>
 #include <vulkan/vulkan.hpp>
+#include "VulkanContext.h"
 
 using namespace glm;
 
@@ -16,6 +17,7 @@ struct Attribute
 };
 
 
+//TODO: allocate vkBuffer here ! (and destroy it eheh)
 //TODO: rename this and see if a more flexible class isn't better
 class VerticesDeclarations
 {
@@ -34,6 +36,9 @@ public:
 	~VerticesDeclarations()
 	{
 		delete[] data;
+
+		VulkanContext::GraphicInstance->GetLogicalDevice().destroyBuffer(buffer);
+		VulkanContext::GraphicInstance->GetLogicalDevice().freeMemory(memory);
 	}
 
 	[[nodiscard]] void const* GetData() const
@@ -51,6 +56,13 @@ public:
 
 		return size;
 	}
+
+	[[nodiscard]] vk::Buffer GetBuffer() const
+	{
+		return buffer;
+	}
+
+	uint GetElementCount() const { return nbOfElements; }
 
 	void addAttribute(const Attribute& _attrib)
 	{
@@ -100,6 +112,10 @@ public:
 protected:
 	std::vector<Attribute> attributes;
 	u8* data;
+	uint nbOfElements;
+
+	vk::Buffer buffer;
+	vk::DeviceMemory memory;
 };
 
 struct MeshVertexDecl : VerticesDeclarations
@@ -114,16 +130,25 @@ struct MeshVertexDecl : VerticesDeclarations
 	MeshVertexDecl(std::vector<Decl> decls)
 	{
 		//position
-		addAttribute(sizeof(float), 2, vk::Format::eR32G32Sfloat);
-
-		//color
 		addAttribute(sizeof(float), 3, vk::Format::eR32G32B32Sfloat);
 
+		//normal
+		addAttribute(sizeof(float), 3, vk::Format::eR32G32B32Sfloat);
+
+		//uv
+		addAttribute(sizeof(float), 2, vk::Format::eR32G32Sfloat);
 
 		data = new u8[4 * sizeof(Decl) * decls.size()]; // u8 == 1 byte, so 4 == u32
 
+		nbOfElements = decls.size();
+
 		memcpy(data, decls.data(), sizeof(Decl) * decls.size());
-	}
+
+		const auto res = VulkanContext::GraphicInstance->CreateVertexBuffer(*this);
+
+		buffer = res.first;
+		memory = res.second;
+	};
 };
 
 struct TriangleVertexDecl : VerticesDeclarations
@@ -135,7 +160,7 @@ struct TriangleVertexDecl : VerticesDeclarations
 		vec2 uv;
 	};
 
-	TriangleVertexDecl(std::vector<Decl> decls)
+	TriangleVertexDecl(const std::vector<Decl>& decls)
 	{
 		//position
 		addAttribute(sizeof(float), 2, vk::Format::eR32G32Sfloat);
@@ -146,9 +171,11 @@ struct TriangleVertexDecl : VerticesDeclarations
 		//uv
 		addAttribute(sizeof(float), 2, vk::Format::eR32G32Sfloat);
 
-		
+
 		data = new u8[4 * sizeof(Decl) * decls.size()]; // u8 == 1 byte, so 4 == u32
 
+		nbOfElements = decls.size();
+
 		memcpy(data, decls.data(), sizeof(Decl) * decls.size());
-	}
+	};
 };

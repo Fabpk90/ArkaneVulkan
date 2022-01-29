@@ -14,8 +14,7 @@
 
 #include <glm/glm.hpp>
 
-#include "VerticesDeclarations.h"
-
+class VerticesDeclarations;
 const std::vector<const char*> validationLayers = {
 	"VK_LAYER_KHRONOS_validation"
 };
@@ -35,7 +34,7 @@ class Mesh;
 
 using namespace glm;
 
-static constexpr u32 MAX_FRAMES_IN_FLIGHT = 1;
+static constexpr u32 MAX_FRAMES_IN_FLIGHT = 3;
 
 class VulkanContext
 {
@@ -51,11 +50,14 @@ public:
 
 	void CreateBuffer(vk::DeviceSize _size, vk::BufferUsageFlags _usage, vk::MemoryPropertyFlags _property, vk::Buffer& _buffer, vk::DeviceMemory& bufferMemory);
 	void CreateImage(u32 _width, u32 _height, vk::Format _format, vk::ImageTiling _tiling, vk::ImageUsageFlags _usage, vk::MemoryPropertyFlags _property, vk::Image& _image, vk::DeviceMemory& _memory);
-	vk::ImageView CreateImageView(const vk::Image& image, vk::Format format) const;
+	vk::ImageView CreateImageView(const vk::Image& image, vk::Format format, vk::ImageAspectFlagBits aspectFlag = vk::ImageAspectFlagBits::eColor) const;
 	[[nodiscard]] vk::Sampler CreateTextureSampler() const;
 	void CopyBuffer(vk::Buffer _srcBuffer, vk::Buffer _dstBuffer, vk::DeviceSize _size) const;
 	void TransitionImageLayout(const vk::Image& _image, vk::ImageLayout _oldLayout, vk::ImageLayout _newLayout) const;
 	void CopyBufferToImage(vk::Buffer _buffer, vk::Image _image, u32 _width, u32 _height) const;
+
+	[[nodiscard]] std::pair<vk::Buffer, vk::DeviceMemory> CreateVertexBuffer(VerticesDeclarations& decl);
+	[[nodiscard]] std::pair<vk::Buffer, vk::DeviceMemory> CreateIndexBuffer(const std::vector<u16>& indices);
 
 	[[nodiscard]] vk::CommandBuffer BeginSingleTimeCommands() const;
 	void EndSingleTimeCommands(vk::CommandBuffer& _commandBuffer) const;
@@ -75,14 +77,13 @@ private:
 	void CreateMemPool() const;
 	void CreateSwapChain();
 	void CreateSwapChainViews();
+	void CreateDepthResources();
 	void CreateRenderPass();
 	void CreateDescriptorSetLayout();
 	void CreateGraphicsPipeline();
 	void CreateFramebuffers();
 	void CreateCommandPool();
 	void LoadEntities();
-	void CreateVertexBuffer();
-	void CreateIndexBuffer();
 	void CreateUniformBuffers();
 	void CreateDescriptorPool();
 	void CreateDescriptorSets();
@@ -91,6 +92,7 @@ private:
 
 	void UpdateUniformBuffer(const vk::ResultValue<unsigned>& imageIndex) const;
 
+	void DestroyDepthResources();
 	void CleanUpSwapChain();
 	void RecreateSwapChain();
 
@@ -181,6 +183,12 @@ private:
 	std::vector<vk::Image> swapchainImages;
 	std::vector<vk::ImageView> swapChainViews;
 
+	//this could be without a vector of them
+	//because only une subpass is running, due to the semaphores used
+	std::vector<vk::Image> swapchainDepthImages;
+	std::vector<vk::ImageView> swapchainDepthImagesViews;
+	std::vector<vk::DeviceMemory> swapchainDepthImagesMemory;
+
 	std::vector<vk::Framebuffer> framebuffers;
 
 	vk::Extent2D actualSwapChainExtent;
@@ -214,31 +222,12 @@ private:
 
 	Shader* shaderTriangle;
 
-	const TriangleVertexDecl triangleVertices = TriangleVertexDecl({
-		{{-0.5f, -0.5f}, {1.0f, 0.0f, 0.0f}, {1.0f, 0.0f}},
-		{{0.5f, -0.5f}, {0.0f, 1.0f, 0.0f}, {0.0f, 0.0f}},
-		{{0.5f, 0.5f}, {0.0f, 0.0f, 1.0f}, {0.0f, 1.0f}},
-		{{-0.5f, 0.5f}, {1.0f, 1.0f, 1.0f}, {1.0f, 1.0f}}
-		});
-
-	const std::vector<uint16_t> indices = 
-	{
-		0, 1, 2, 2, 3, 0
-	};
-
 	struct UBO
 	{
 		mat4 model;
 		mat4 view;
 		mat4 proj;
 	};
-
-	vk::Buffer vertexBuffer;
-	//VmaAllocation vertexAlloc;
-	vk::DeviceMemory vertexDeviceMemory;
-
-	vk::Buffer indexBuffer;
-	vk::DeviceMemory indexBufferDeviceMemory;
 
 	std::vector<vk::Buffer> uboBuffers;
 	std::vector<vk::DeviceMemory> uboBuffersMemory;

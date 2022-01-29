@@ -2,13 +2,14 @@
 #include <vector>
 #include <assimp/scene.h>
 
+#include "IndexBuffer.h"
 #include "Texture2D.h"
 #include "VerticesDeclarations.h"
 
 struct SubMesh
 {
 	MeshVertexDecl vertices;
-	std::vector<glm::u16> indices;
+	IndexBuffer indices;
 	std::vector<Texture2D> textures;
 
 	SubMesh(std::vector<MeshVertexDecl::Decl>&& vertices, std::vector<glm::u16>&& indices, std::vector<Texture2D>&& textures)

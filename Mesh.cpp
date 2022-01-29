@@ -128,11 +128,11 @@ std::vector<Texture2D> Mesh::LoadMaterialTexturesType(aiMaterial* pMaterial, aiT
 
     for (u32 i = 0; i < textures.size(); ++i)
     {
-        aiString path;
-        pMaterial->GetTexture(type, i, &path);
+        aiString texpath;
+        pMaterial->GetTexture(type, i, &texpath);
 
         std::string texPath = pathCleaned;
-        texPath += path.C_Str();
+        texPath += texpath.C_Str();
 
         textures[i].LoadFrom(texPath.c_str(), vk::ImageLayout::eGeneral);
     }
