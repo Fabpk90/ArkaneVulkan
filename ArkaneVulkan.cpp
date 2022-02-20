@@ -7,13 +7,23 @@
 #define STB_IMAGE_IMPLEMENTATION
 #include "extern/stb/stb_image.h"
 
-#include "VulkanContext.h"
+#include "systems/SceneGraph.h"
+#include "systems/SceneManager.h"
+#include "systems/SystemManager.h"
+#include "systems/VulkanContext.h"
 
 int main()
 {
-    VulkanContext ctx;
-    ctx.InitWindow();
-    ctx.InitVulkan();
-    ctx.DrawLoop();
-    ctx.Destroy();
+    SystemManager manager;
+    manager.AddSystem(new VulkanContext());
+    manager.AddSystem(new SceneGraph());
+    manager.AddSystem(new SceneManager());
+
+
+    manager.Start();
+
+    while (manager.ShouldContinue())
+    {
+        manager.Update();
+    }
 }

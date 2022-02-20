@@ -1,6 +1,5 @@
 #include "Texture2D.h"
 
-#include "VulkanContext.h"
 #include "extern/stb/stb_image.h"
 
 Texture2D::Texture2D(Texture2D&& tex) : size(tex.size), imageMemory(tex.imageMemory), image(tex.image), sampler(tex.sampler),

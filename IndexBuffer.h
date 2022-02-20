@@ -3,41 +3,34 @@
 #include <glm/glm.hpp>
 #include <vulkan/vulkan.hpp>
 
-#include "VulkanContext.h"
+#include "systems/VulkanContext.h"
 
 class IndexBuffer
 {
 public:
-	IndexBuffer(const std::vector<glm::u16>& indices)
-		: size(indices.size())
+	IndexBuffer(std::vector<u16>&& _indices)
+		: m_size(_indices.size()),
+	      m_buffer(nullptr),
+	      m_memory(nullptr)
 	{
-		const auto res = VulkanContext::GraphicInstance->CreateIndexBuffer(indices);
+		const auto [buf, mem] = VulkanContext::GraphicInstance->CreateIndexBuffer(_indices);
 
-		buffer = res.first;
-		memory = res.second;
+		m_buffer = buf;
+		m_memory = mem;
 	}
-
-	/*IndexBuffer(const std::vector<glm::u32>& indices)
-		: size(indices.size())
-	{
-		const auto res = VulkanContext::GraphicInstance->CreateIndexBuffer(indices);
-
-		buffer = res.first;
-		memory = res.second;
-	}*/
 
 	~IndexBuffer()
 	{
-		VulkanContext::GraphicInstance->GetLogicalDevice().destroyBuffer(buffer);
-		VulkanContext::GraphicInstance->GetLogicalDevice().freeMemory(memory);
+		VulkanContext::GraphicInstance->GetLogicalDevice().destroyBuffer(m_buffer);
+		VulkanContext::GraphicInstance->GetLogicalDevice().freeMemory(m_memory);
 	}
 
-	[[nodiscard]] const vk::Buffer& GetBuffer() const { return buffer; }
+	[[nodiscard]] const vk::Buffer& GetBuffer() const { return m_buffer; }
 
-	u32 GetSize() const { return size; }
+	[[nodiscard]] u32 GetSize() const { return m_size; }
 private:
-	u32 size;
-	vk::Buffer buffer;
-	vk::DeviceMemory memory;
+	u32 m_size;
+	vk::Buffer m_buffer;
+	vk::DeviceMemory m_memory;
 };
 

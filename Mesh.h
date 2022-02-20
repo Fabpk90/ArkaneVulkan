@@ -3,8 +3,10 @@
 #include <assimp/scene.h>
 
 #include "IndexBuffer.h"
+#include "Node.h"
 #include "Texture2D.h"
 #include "VerticesDeclarations.h"
+#include "Shader.h"
 
 struct SubMesh
 {
@@ -12,35 +14,34 @@ struct SubMesh
 	IndexBuffer indices;
 	std::vector<Texture2D> textures;
 
-	SubMesh(std::vector<MeshVertexDecl::Decl>&& vertices, std::vector<glm::u16>&& indices, std::vector<Texture2D>&& textures)
-		: vertices(std::move(vertices)), indices(std::move(indices)), textures(std::move(textures)) {};
+	SubMesh(std::vector<MeshVertexDecl::Decl>&& _vertices, std::vector<glm::u16>&& _indices, std::vector<Texture2D>&& _textures)
+		: vertices(std::move(_vertices)), indices(std::move(_indices)), textures(std::move(_textures)) {};
 };
 
-class Mesh
+class Mesh : public Node
 {
 public:
 	Mesh(const char* _path);
-	Mesh() = default;
 
-	~Mesh()
-	{
-		for (const auto* subMesh : subMeshes)
-		{
-			delete subMesh;
-		}
-	}
+	void Start() override;
+	void Update() override;
+	void GUI() override;
 
-	std::vector<SubMesh*>& GetSubMeshes() { return subMeshes; }
+	~Mesh() override
+	= default;
+
+	std::vector<std::unique_ptr<SubMesh>>& GetSubMeshes() { return subMeshes; }
 
 private:
 	void RecursivelyLoadNode(const aiNode* const pNode, const aiScene* pScene);
 	SubMesh* LoadMeshFrom(const aiMesh& mesh, const aiScene* scene);
 	std::vector<Texture2D> LoadMaterialTexturesType(aiMaterial* pMaterial, aiTextureType type);
 
-private:
 	std::string path;
 	std::string pathCleaned;
 
-	std::vector<SubMesh*> subMeshes; // todo: change this to a non pointer type, cache friendliness please !
+	std::vector<std::unique_ptr<SubMesh>> subMeshes; // todo: change this to a non pointer type, cache friendliness please !
+
+	std::unique_ptr<Shader> m_shader;
 };
 

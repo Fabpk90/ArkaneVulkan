@@ -5,7 +5,7 @@
 #include <vulkan/vulkan.hpp>
 
 #include "TextureFormats.h"
-#include "VulkanContext.h"
+#include "systems/VulkanContext.h"
 
 static vk::ImageLayout GetTextureLayout(aiTextureType& texType)
 {

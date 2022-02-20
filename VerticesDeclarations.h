@@ -2,7 +2,6 @@
 
 #include <glm/glm.hpp>
 #include <vulkan/vulkan.hpp>
-#include "VulkanContext.h"
 
 using namespace glm;
 
@@ -11,9 +10,7 @@ struct Attribute
 	u32 elementSize; // in bytes
 	u32 numOfElements;
 	vk::Format format;
-
-	Attribute(u32 elementSize, u32 numOfElements, vk::Format format)
-		: elementSize(elementSize), numOfElements(numOfElements), format(format) {};
+	std::string name;
 };
 
 
@@ -35,7 +32,7 @@ public:
 
 	~VerticesDeclarations()
 	{
-		delete[] data;
+		delete[] m_data;
 
 		VulkanContext::GraphicInstance->GetLogicalDevice().destroyBuffer(buffer);
 		VulkanContext::GraphicInstance->GetLogicalDevice().freeMemory(memory);
@@ -43,13 +40,13 @@ public:
 
 	[[nodiscard]] void const* GetData() const
 	{
-		return data;
+		return m_data;
 	}
 
 	[[nodiscard]] u32 GetByteSize() const
 	{
 		u32 size = 0;
-		for (const auto& attribute : attributes)
+		for (const auto& attribute : m_attributes)
 		{
 			size += attribute.elementSize * attribute.numOfElements;
 		}
@@ -66,12 +63,12 @@ public:
 
 	void addAttribute(const Attribute& _attrib)
 	{
-		attributes.emplace_back(_attrib);
+		m_attributes.emplace_back(_attrib);
 	}
 
-	void addAttribute(u32 _elementSize, u32 _numOfElements, vk::Format _format)
+	void addAttribute(Attribute&& attrib)
 	{
-		attributes.emplace_back(Attribute{ _elementSize, _numOfElements, _format });
+		m_attributes.emplace_back(std::move(attrib));
 	}
 
 	[[nodiscard]] vk::VertexInputBindingDescription GetBindingDescription() const
@@ -91,7 +88,7 @@ public:
 		u32 offset = 0;
 		u32 location = 0;
 
-		for (const auto& attribute : attributes)
+		for (const auto& attribute : m_attributes)
 		{
 			vk::VertexInputAttributeDescription desc;
 			const u32 sizeOfElement = attribute.elementSize * attribute.numOfElements;
@@ -110,8 +107,8 @@ public:
 	}
 
 protected:
-	std::vector<Attribute> attributes;
-	u8* data;
+	std::vector<Attribute> m_attributes;
+	u8* m_data;
 	uint nbOfElements;
 
 	vk::Buffer buffer;
@@ -125,29 +122,35 @@ struct MeshVertexDecl : VerticesDeclarations
 		vec3 pos;
 		vec3 normal;
 		vec2 uv;
+		vec3 tangent;
+		vec3 bitangent;
 	};
 
-	MeshVertexDecl(std::vector<Decl> decls)
+	MeshVertexDecl(std::vector<Decl>&& _decls)
 	{
 		//position
-		addAttribute(sizeof(float), 3, vk::Format::eR32G32B32Sfloat);
+		addAttribute({sizeof(float), 3, vk::Format::eR32G32B32Sfloat, "position" });
 
 		//normal
-		addAttribute(sizeof(float), 3, vk::Format::eR32G32B32Sfloat);
+		addAttribute({ sizeof(float), 3, vk::Format::eR32G32B32Sfloat, "normal"});
 
 		//uv
-		addAttribute(sizeof(float), 2, vk::Format::eR32G32Sfloat);
+		addAttribute({ sizeof(float), 2, vk::Format::eR32G32Sfloat, "uv"});
 
-		data = new u8[4 * sizeof(Decl) * decls.size()]; // u8 == 1 byte, so 4 == u32
+		addAttribute({ sizeof(float), 3, vk::Format::eR32G32B32Sfloat, "tangent" });
 
-		nbOfElements = decls.size();
+		addAttribute({ sizeof(float), 3, vk::Format::eR32G32B32Sfloat, "bitangent" });
 
-		memcpy(data, decls.data(), sizeof(Decl) * decls.size());
+		m_data = new u8[4 * sizeof(Decl) * _decls.size()]; // u8 == 1 byte, so 4 == u32
 
-		const auto res = VulkanContext::GraphicInstance->CreateVertexBuffer(*this);
+		nbOfElements = _decls.size();
 
-		buffer = res.first;
-		memory = res.second;
+		memcpy(m_data, _decls.data(), sizeof(Decl) * _decls.size());
+
+		const auto [buff, mem] = VulkanContext::GraphicInstance->CreateVertexBuffer(*this);
+
+		buffer = buff;
+		memory = mem;
 	};
 };
 
@@ -160,22 +163,22 @@ struct TriangleVertexDecl : VerticesDeclarations
 		vec2 uv;
 	};
 
-	TriangleVertexDecl(const std::vector<Decl>& decls)
+	TriangleVertexDecl(std::vector<Decl>&& _decls)
 	{
 		//position
-		addAttribute(sizeof(float), 2, vk::Format::eR32G32Sfloat);
+		addAttribute({ sizeof(float), 2, vk::Format::eR32G32Sfloat, "position"});
 
 		//color
-		addAttribute(sizeof(float), 3, vk::Format::eR32G32B32Sfloat);
+		addAttribute({ sizeof(float), 3, vk::Format::eR32G32B32Sfloat, "color"});
 
 		//uv
-		addAttribute(sizeof(float), 2, vk::Format::eR32G32Sfloat);
+		addAttribute({ sizeof(float), 2, vk::Format::eR32G32Sfloat, "uv"});
 
 
-		data = new u8[4 * sizeof(Decl) * decls.size()]; // u8 == 1 byte, so 4 == u32
+		m_data = new u8[4 * sizeof(Decl) * _decls.size()]; // u8 == 1 byte, so 4 == u32
 
-		nbOfElements = decls.size();
+		nbOfElements = _decls.size();
 
-		memcpy(data, decls.data(), sizeof(Decl) * decls.size());
+		memcpy(m_data, _decls.data(), sizeof(Decl) * _decls.size());
 	};
 };

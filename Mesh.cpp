@@ -6,18 +6,38 @@
 #include <assimp/postprocess.h>
 
 #include "Texture2D.h"
+#include "imgui/imgui.h"
+#include "json/json.hpp"
+
+std::string readFile2(const std::string& fileName)
+{
+	std::ifstream ifs(fileName.c_str(), std::ios::in | std::ios::binary | std::ios::ate);
+
+	std::ifstream::pos_type fileSize = ifs.tellg();
+    ifs.seekg(0, std::ios::beg);
+
+    std::vector<char> bytes(fileSize);
+    ifs.read(bytes.data(), fileSize);
+
+    return std::string(bytes.data(), fileSize);
+}
 
 Mesh::Mesh(const char* _path) : path(_path)
 {
-    const auto index = path.find_last_of('/') + 1; // +1 to include the /
-    pathCleaned = path.substr(0, index);
+    nlohmann::json j = nlohmann::json::parse(readFile2(_path));
 
-	const std::ifstream file(path);
+    const std::string& shaderPath = j["shaderPath"];
+    const std::string& meshPath = j["meshDataPath"];
+
+    const auto index = meshPath.find_last_of('/') + 1; // +1 to include the /
+    pathCleaned = meshPath.substr(0, index);
+
+    const std::ifstream file(meshPath);
 
     if (!file.bad())
     {
         Assimp::Importer importer;
-        const aiScene* scene = importer.ReadFile(path, aiProcess_Triangulate | aiProcess_FlipUVs | aiProcess_GenNormals);
+        const aiScene* scene = importer.ReadFile(meshPath, aiProcess_Triangulate | aiProcess_FlipUVs | aiProcess_GenNormals | aiProcess_CalcTangentSpace);
 
         subMeshes.reserve(scene->mNumMeshes);
 
@@ -25,6 +45,24 @@ Mesh::Mesh(const char* _path) : path(_path)
 
         importer.FreeScene();
     }
+
+    m_shader = std::make_unique<Shader>(VulkanContext::GraphicInstance->GetLogicalDevice(), shaderPath.c_str());
+}
+
+void Mesh::Start()
+{
+
+}
+
+void Mesh::Update()
+{
+
+}
+
+void Mesh::GUI()
+{
+    ImGui::Begin("Test");
+    ImGui::Button("Yes");
 }
 
 void Mesh::RecursivelyLoadNode(const aiNode* const pNode, const aiScene* pScene)
@@ -49,11 +87,11 @@ SubMesh* Mesh::LoadMeshFrom(const aiMesh& mesh, const aiScene* scene)
     vertices.reserve(mesh.mNumVertices);
     indices.reserve(mesh.mNumFaces);
 
-
     for (u32 i = 0; i < mesh.mNumVertices; i++)
     {
         MeshVertexDecl::Decl v{};
 
+        //todo: replace this by memcpy
         v.pos.x = mesh.mVertices[i].x;
         v.pos.y = mesh.mVertices[i].y;
         v.pos.z = mesh.mVertices[i].z;
@@ -64,6 +102,14 @@ SubMesh* Mesh::LoadMeshFrom(const aiMesh& mesh, const aiScene* scene)
 
         v.uv.x = mesh.mTextureCoords[0][i].x;
         v.uv.y = mesh.mTextureCoords[0][i].y;
+
+        v.tangent.x = mesh.mTangents->x;
+        v.tangent.y = mesh.mTangents->y;
+        v.tangent.z = mesh.mTangents->z;
+
+        v.bitangent.x = mesh.mBitangents->x;
+        v.bitangent.y = mesh.mBitangents->y;
+        v.bitangent.z = mesh.mBitangents->z;
 
         vertices.emplace_back(v);
     }

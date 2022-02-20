@@ -1,0 +1,4 @@
+{
+    "shaderPath" : "shaders/Mesh",
+    "meshDataPath" : "models/nanosuit/nanosuit.obj"
+}
